@@ -16,7 +16,6 @@
 // Add the SdFat Libraries
 #include <SdFat.h>
 #include <SdFatUtil.h> 
-
 // globals for mp3 shield
 //Create the variables to be used by SdFat Library
 Sd2Card card;
@@ -47,8 +46,6 @@ char errorMsg[100]; //This is a generic array used for sprintf of error messages
 #define SCI_AICTRL2 0x0E  uyk,  mkfu f fv   vf  
 #define SCI_AICTRL3 0x0F
 
-
-
 // Globals for barker
 int sensorPin = 2;
 int ledPin = 9;
@@ -61,7 +58,6 @@ unsigned long neighborAlertTimestamp = 0;
 
 void setup() {
   Serial.begin(9600);
- 
    
   pinMode(MP3_DREQ, INPUT);
   pinMode(MP3_XCS, OUTPUT);
@@ -75,11 +71,7 @@ void setup() {
   card.init(SPI_FULL_SPEED);
   volume.init(&card);
   root.openRoot(&volume);
-  /*
-  if (!card.init(SPI_FULL_SPEED))  Serial.println("Error: Card init"); //Initialize the SD card and configure the I/O pins.
-  if (!volume.init(&card)) Serial.println("Error: Volume ini"); //Initialize a volume on the SD card.
-  if (!root.openRoot(&volume)) Serial.println("Error: Opening root"); //Open the root directory in the volume. 
-  */
+  
   SPI.setClockDivider(SPI_CLOCK_DIV16); //Set SPI bus speed to 1MHz (16MHz / 16 = 1MHz)
   SPI.transfer(0xFF); //Throw a dummy byte at the bus
   delay(10);
@@ -104,7 +96,6 @@ void loop() {
   alertGap =abs(currentTime - alertTimestamp);
     
   val = analogRead(sensorPin);
-  //zdelay(50);
   val = map(val, 1, 50, 0, 100);
 if(alertGap > RAISE_LEVEL_ALERT_GAP) {  
   // prepare values from my sensor 
@@ -112,23 +103,16 @@ if(alertGap > RAISE_LEVEL_ALERT_GAP) {
     sum = sum + values[i];
   }
    
-  if(values[0] != 0) { 
-    //average = sum / NUM_OF_SAMPLE;
-    //delta = abs(average - val);
+  if(values[0] != 0) {
     if( values[0] - val > 0 ) {
      delta = 0; 
     } else {
       delta = val - values[0];
     }
-    //delta = abs(values[0] - val);
   } else {
     delta = 0;
   }
 }
-  //Serial.println(val);
-  // check alert level 1 from my sensor
-  //if( (delta > 100) && (alertTimestamp == 0) ) {
-  //azSerial.println(delta);
   if(alertGap > RAISE_LEVEL_ALERT_GAP) {
   if( delta > LEVEL_1_THRESHOLD )   {
     // update Timer 
@@ -140,7 +124,6 @@ if(alertGap > RAISE_LEVEL_ALERT_GAP) {
     }
    // set alert level 2 from my alertTimestamp
    alertGap =abs(currentTime - alertTimestamp);
-   //Serial.println(alertGap);
    // Raise Level by alertGap
    if( ((state == 1) || (state == 2)) && (alertGap < RAISE_LEVEL_ALERT_GAP) && (alertGap != alertTimestamp)) {
       // update Timer 
@@ -156,25 +139,11 @@ if(alertGap > RAISE_LEVEL_ALERT_GAP) {
       values[i-1] = values[i]; 
     }
     values[NUM_OF_SAMPLE-1] = val;
-  
 
   // getting alert Level from my neighbor 
    if( Serial.available() > 0 )
    {
      char inByte = Serial.read();
-     /*
-     if( inByte == '1' || inByte == '2' )
-     {
-        neighborAlertTimestamp = currentTime;
-        if( inByte == '1' ) {
-          neighborAlertLevel = 1; 
-        } else if( inByte == '2' ) {
-          neighborAlertLevel = 2; 
-        }
-        //delay(1000);
-     }
-     */
-      
      if( inByte == '2' ) {
        Serial.println("Yatta!"); 
        neighborAlertTimestamp = currentTime;
@@ -183,10 +152,8 @@ if(alertGap > RAISE_LEVEL_ALERT_GAP) {
      while(Serial.available() > 0) {
        Serial.read(); 
      }
-     //Serial.flush();
    }
- // bark 3 second after neighbor get alert Event
-
+  // bark 3 second after neighbor get alert Event
   // set alert level from my neighbor
   n_gap = currentTime - neighborAlertTimestamp;
   Serial.println("--*--");
@@ -202,7 +169,6 @@ if(alertGap > RAISE_LEVEL_ALERT_GAP) {
   alert();
   
   delay(100);
-  
 }
 
 void alert() {
@@ -225,9 +191,7 @@ void turnOffWhenSituationEnded(){
     state = 0;
     analogWrite(ledPin,0);     
     alertTimestamp = 0;
-  } 
- // Serial.println("currentTime - neighborAlertTimestamp : "+(String) (currentTime - neighborAlertTimestamp) + ", neighborAlertTimestamp: " + (String) neighborAlertTimestamp+", state: "+state);
-  
+  }   
   if((state == 1) && (currentTime - neighborAlertTimestamp > DEFAULT_BARK_DURATION) && (neighborAlertTimestamp != 0)){
     state = 0;
     analogWrite(ledPin,0);  
@@ -241,7 +205,6 @@ void turnOffWhenSituationEnded(){
   }
 }
 
-
 void playMP3(char* fileName) {
   if (!track.open(&root, fileName, O_READ)) { //Open the file in read mode.
     sprintf(errorMsg, "Failed to open %s", fileName);
@@ -254,22 +217,16 @@ void playMP3(char* fileName) {
     while(!digitalRead(MP3_DREQ)) { 
       if(need_data == TRUE) {
         if(!track.read(mp3DataBuffer, sizeof(mp3DataBuffer))) { //Try reading 32 new bytes of the song
-          //Oh no! There is no data left to read! Time to exit
           break;
         }
         need_data = FALSE;
       }
       long start_time = millis();
-      //delay(150); //Do NOTHING - audible glitches
-      //delay(135); //Do NOTHING - audible glitches
-      //delay(120); //Do NOTHING - barely audible glitches
       delay(100); //Do NOTHING - sounds fine
       replenish_time = millis();
     }
     if(need_data == TRUE){ //This is here in case we haven't had any free time to load new data
       if(!track.read(mp3DataBuffer, sizeof(mp3DataBuffer))) { //Go out to SD card and try reading 32 new bytes of the song
-        //Oh no! There is no data left to read!
-        //Time to exit
         break;
       }
       need_data = FALSE;
@@ -297,6 +254,7 @@ void Mp3WriteRegister(unsigned char addressbyte, unsigned char highbyte, unsigne
   while(!digitalRead(MP3_DREQ)) ; //Wait for DREQ to go high indicating command is complete
   digitalWrite(MP3_XCS, HIGH); //Deselect Control
 }
+
 unsigned int Mp3ReadRegister (unsigned char addressbyte){
   while(!digitalRead(MP3_DREQ)) ; //Wait for DREQ to go high indicating IC is available
   digitalWrite(MP3_XCS, LOW); //Select control
@@ -312,11 +270,7 @@ unsigned int Mp3ReadRegister (unsigned char addressbyte){
   return resultvalue;
 }
 
-//Set VS10xx Volume Register
 void Mp3SetVolume(unsigned char leftchannel, unsigned char rightchannel){
   Mp3WriteRegister(SCI_VOL, leftchannel, rightchannel);
 }
-
-
-
 
