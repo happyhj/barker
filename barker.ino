@@ -1,3 +1,14 @@
+// Constants for barker
+#define DEFAULT_BARK_DURATION 1000
+#define DEFAULT_STRONG_BARK_DURATION 5000
+#define CHAIN_BARK_DELAY 1000
+#define RAISE_LEVEL_ALERT_GAP 5000 // level 1 sound file length should silghtly shorter than this
+#define LEVEL_2_THRESHOLD 600 //
+#define LEVEL_1_THRESHOLD 100 //
+#define VOLUME_SCALE 20 //20,40,80
+
+#define NUM_OF_SAMPLE 1 //
+
 // Import SD card library 
 #include <SD.h>
 #include <SPI.h>
@@ -6,31 +17,19 @@
 #include <SdFat.h>
 #include <SdFatUtil.h> 
 
-#define DEFAULT_BARK_DURATION 1000
-#define CHAIN_BARK_DELAY 2000
-#define VOLUME_SCALE 20 //20,40,80
-#define NUM_OF_SAMPLE 1 //20,40,80
-
 // globals for mp3 shield
 //Create the variables to be used by SdFat Library
 Sd2Card card;
 SdVolume volume;
 SdFile root;
 SdFile track;
-
 char errorMsg[100]; //This is a generic array used for sprintf of error messages
-
 #define TRUE  0
 #define FALSE  1
-
-//MP3 Player Shield pin mapping. See the schematic
 #define MP3_XCS 6 //Control Chip Select Pin (for accessing SPI Control/Status registers)
 #define MP3_XDCS 7 //Data Chip Select / BSYNC Pin
 #define MP3_DREQ 2 //Data Request Pin: Player asks for more data
 #define MP3_RESET 8 //Reset is active low
-//Remember you have to edit the Sd2PinMap.h of the sdfatlib library to correct control the SD card.
-
-//VS10xx SCI Registers
 #define SCI_MODE 0x00
 #define SCI_STATUS 0x01
 #define SCI_BASS 0x02
@@ -44,121 +43,161 @@ char errorMsg[100]; //This is a generic array used for sprintf of error messages
 #define SCI_AIADDR 0x0A
 #define SCI_VOL 0x0B
 #define SCI_AICTRL0 0x0C
-#define SCI_AICTRL1 0x0D
-#define SCI_AICTRL2 0x0E
+#define SCI_AICTRL1 0x0Dmn,  g
+#define SCI_AICTRL2 0x0E  uyk,  mkfu f fv   vf  
 #define SCI_AICTRL3 0x0F
 
 
-// globals for barker
+
+// Globals for barker
 int sensorPin = 2;
 int ledPin = 9;
-int state = 0; // 0: ideal,1: alert
+int state = 0; // 0: ideal,1: alert, 2: strong alert
+int neighborAlertLevel = 0;
 int values[NUM_OF_SAMPLE] = {0};
 int average = 0;
 unsigned long alertTimestamp = 0;
 unsigned long neighborAlertTimestamp = 0;
 
 void setup() {
-  Serial.begin(9600); 
-
-  //Serial.println("Setting Pin for mp3 shield...");
+  Serial.begin(9600);
+ 
+   
   pinMode(MP3_DREQ, INPUT);
   pinMode(MP3_XCS, OUTPUT);
   pinMode(MP3_XDCS, OUTPUT);
   pinMode(MP3_RESET, OUTPUT);
-
   digitalWrite(MP3_XCS, HIGH); //Deselect Control
   digitalWrite(MP3_XDCS, HIGH); //Deselect Data
   digitalWrite(MP3_RESET, LOW); //Put VS1053 into hardware reset
-
-//  Serial.begin(57600); //Use serial for debugging 
- // Serial.println("MP3 Testing");
-
-  //Setup SD card interface
   pinMode(10, OUTPUT);       //Pin 10 must be set as an output for the SD communication to work.
+  
+  card.init(SPI_FULL_SPEED);
+  volume.init(&card);
+  root.openRoot(&volume);
+  /*
   if (!card.init(SPI_FULL_SPEED))  Serial.println("Error: Card init"); //Initialize the SD card and configure the I/O pins.
   if (!volume.init(&card)) Serial.println("Error: Volume ini"); //Initialize a volume on the SD card.
   if (!root.openRoot(&volume)) Serial.println("Error: Opening root"); //Open the root directory in the volume. 
-
-  //We have no need to setup SPI for VS1053 because this has already been done by the SDfatlib
+  */
   SPI.setClockDivider(SPI_CLOCK_DIV16); //Set SPI bus speed to 1MHz (16MHz / 16 = 1MHz)
   SPI.transfer(0xFF); //Throw a dummy byte at the bus
-  //Initialize VS1053 chip 
   delay(10);
   digitalWrite(MP3_RESET, HIGH); //Bring up VS1053
   Mp3SetVolume(VOLUME_SCALE, VOLUME_SCALE); //Set initial volume (20 = -10dB) Manageable
-
-  //Let's check the status of the VS1053
   int MP3Mode = Mp3ReadRegister(SCI_MODE);
   int MP3Status = Mp3ReadRegister(SCI_STATUS);
   int MP3Clock = Mp3ReadRegister(SCI_CLOCKF);
   int vsVersion = (MP3Status >> 4) & 0x000F; //Mask out only the four version bits
-  //Now that we have the VS1053 up and running, increase the internal clock multiplier and up our SPI rate
   Mp3WriteRegister(SCI_CLOCKF, 0x60, 0x00); //Set multiplier to 3.0x
   SPI.setClockDivider(SPI_CLOCK_DIV4); //Set SPI bus speed to 4MHz (16MHz / 4 = 4MHz)
   MP3Clock = Mp3ReadRegister(SCI_CLOCKF);
-  //MP3 IC setup complete
 }
 
 void loop() {
   int sum = 0,
-      i= 0,val= 0, delta = 0;
-  unsigned long currentTime = millis();
+      i= 0, val= 0, delta = 0;
+  unsigned long currentTime = millis(),
+  alertGap = 0,
+  n_gap = 0;
+
+  alertGap =abs(currentTime - alertTimestamp);
     
   val = analogRead(sensorPin);
+  //zdelay(50);
   val = map(val, 1, 50, 0, 100);
-
-
-  // calculate sum
+if(alertGap > RAISE_LEVEL_ALERT_GAP) {  
+  // prepare values from my sensor 
   for(i=0;i<NUM_OF_SAMPLE;i++){
     sum = sum + values[i];
   }
+   
   if(values[0] != 0) { 
-    average = sum / NUM_OF_SAMPLE;
-    delta = abs(average - val);
+    //average = sum / NUM_OF_SAMPLE;
+    //delta = abs(average - val);
+    if( values[0] - val > 0 ) {
+     delta = 0; 
+    } else {
+      delta = val - values[0];
+    }
+    //delta = abs(values[0] - val);
   } else {
     delta = 0;
   }
-  
-  if( (delta > 100) && (alertTimestamp == 0) ) {
+}
+  //Serial.println(val);
+  // check alert level 1 from my sensor
+  //if( (delta > 100) && (alertTimestamp == 0) ) {
+  //azSerial.println(delta);
+  if(alertGap > RAISE_LEVEL_ALERT_GAP) {
+  if( delta > LEVEL_1_THRESHOLD )   {
     // update Timer 
-    alertTimestamp = millis();
     state = 1;
-    Serial.println(state);  
-  }
-  
-  // add value
-  // shift-left values
-  for(i=1; i<NUM_OF_SAMPLE; i++) { 
-    values[i-1] = values[i]; 
-  }
-  values[NUM_OF_SAMPLE-1] = val;
     
+    // Raise Level by Intensity
+    if(delta > LEVEL_2_THRESHOLD) {
+      state = 2;
+    }
+   // set alert level 2 from my alertTimestamp
+   alertGap =abs(currentTime - alertTimestamp);
+   //Serial.println(alertGap);
+   // Raise Level by alertGap
+   if( ((state == 1) || (state == 2)) && (alertGap < RAISE_LEVEL_ALERT_GAP) && (alertGap != alertTimestamp)) {
+      // update Timer 
+      state = 2;
+    }
+    alertTimestamp = currentTime;
+    Serial.println(state);  
+  } 
+  }
+  // store values
+  // shift-left values
+    for(i=1; i<NUM_OF_SAMPLE; i++) { 
+      values[i-1] = values[i]; 
+    }
+    values[NUM_OF_SAMPLE-1] = val;
   
-//  Serial.println("delta: "+ (String)delta + ", val:"+(String)val + ", average: "+ (String)average+", alertTimestamp: "+(String)alertTimestamp+ ", currentTime: "+currentTime);
- // Serial get Input 
+
+  // getting alert Level from my neighbor 
    if( Serial.available() > 0 )
    {
      char inByte = Serial.read();
-     //Serial.println("**"+(String)inByte);
-     if( inByte == '1' )
+     /*
+     if( inByte == '1' || inByte == '2' )
      {
-        neighborAlertTimestamp = millis();
-        delay(1000);
-     } 
-     Serial.flush();
+        neighborAlertTimestamp = currentTime;
+        if( inByte == '1' ) {
+          neighborAlertLevel = 1; 
+        } else if( inByte == '2' ) {
+          neighborAlertLevel = 2; 
+        }
+        //delay(1000);
+     }
+     */
+      
+     if( inByte == '2' ) {
+       Serial.println("Yatta!"); 
+       neighborAlertTimestamp = currentTime;
+        neighborAlertLevel = 2; 
+     }
+     while(Serial.available() > 0) {
+       Serial.read(); 
+     }
+     //Serial.flush();
    }
  // bark 3 second after neighbor get alert Event
- //  Serial.println((String) (currentTime - neighborAlertTimestamp) + " " + (String)neighborAlertTimestamp);
 
-//  if( (currentTime - neighborAlertTimestamp > CHAIN_BARK_DELAY) && (neighborAlertTimestamp != 0)) {
-  if( neighborAlertTimestamp != 0) { 
-  // update Timer 
-      //delay(1000); 
-      state = 1;
-      //neighborAlertTimestamp = 0;
+  // set alert level from my neighbor
+  n_gap = currentTime - neighborAlertTimestamp;
+  Serial.println("--*--");
+  Serial.println("-"+String(neighborAlertTimestamp));
+  Serial.println("-"+String(currentTime));
+  Serial.println("-----");
+
+  if( (neighborAlertTimestamp != 0) && (n_gap < 5000) &&  (n_gap> CHAIN_BARK_DELAY)) {  
+      state = neighborAlertLevel;
   } 
-  
+
   turnOffWhenSituationEnded(); 
   alert();
   
@@ -168,25 +207,37 @@ void loop() {
 
 void alert() {
  if(state == 1) {
-    analogWrite(ledPin,255); 
+    analogWrite(ledPin, 100); 
     playMP3("track001.mp3");
-    //Serial.println("alert!!");
+ } else if(state == 2) {
+    analogWrite(ledPin, 255); 
+    playMP3("track002.mp3");
  }
 }
 
 void turnOffWhenSituationEnded(){
   unsigned long currentTime = millis();
-  if((currentTime - alertTimestamp > DEFAULT_BARK_DURATION) && (alertTimestamp != 0)) {
+  if((state == 1) && (currentTime - alertTimestamp > DEFAULT_BARK_DURATION) && (alertTimestamp != 0)) {
+    state = 0;
+    analogWrite(ledPin,0);     
+    alertTimestamp = 0;
+  } else if((state == 2) && (currentTime - alertTimestamp > DEFAULT_STRONG_BARK_DURATION) && (alertTimestamp != 0)) {
     state = 0;
     analogWrite(ledPin,0);     
     alertTimestamp = 0;
   } 
  // Serial.println("currentTime - neighborAlertTimestamp : "+(String) (currentTime - neighborAlertTimestamp) + ", neighborAlertTimestamp: " + (String) neighborAlertTimestamp+", state: "+state);
   
-  if((currentTime - neighborAlertTimestamp > DEFAULT_BARK_DURATION) && (neighborAlertTimestamp != 0)){
+  if((state == 1) && (currentTime - neighborAlertTimestamp > DEFAULT_BARK_DURATION) && (neighborAlertTimestamp != 0)){
     state = 0;
     analogWrite(ledPin,0);  
     neighborAlertTimestamp = 0;
+    neighborAlertLevel = 0;
+  } else if((state == 2) && (currentTime - neighborAlertTimestamp > DEFAULT_STRONG_BARK_DURATION) && (neighborAlertTimestamp != 0)){
+    state = 0;
+    analogWrite(ledPin,0);  
+    neighborAlertTimestamp = 0;
+    neighborAlertLevel = 0;
   }
 }
 
