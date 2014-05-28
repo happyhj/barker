@@ -42,8 +42,8 @@ char errorMsg[100]; //This is a generic array used for sprintf of error messages
 #define SCI_AIADDR 0x0A
 #define SCI_VOL 0x0B
 #define SCI_AICTRL0 0x0C
-#define SCI_AICTRL1 0x0Dmn,  g
-#define SCI_AICTRL2 0x0E  uyk,  mkfu f fv   vf  
+#define SCI_AICTRL1 0x0D
+#define SCI_AICTRL2 0x0E
 #define SCI_AICTRL3 0x0F
 
 // Globals for barker
